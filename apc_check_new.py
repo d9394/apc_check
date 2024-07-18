@@ -224,8 +224,8 @@ def main():
 						if fail_count == 0 :
 							print('要求关机')
 							send_message("进入关机程序，电池电压%sV" % apcserial.Battery_vol)
-							subprocess.call('shutdown -h 1 &',shell=True)
-							sys.exit(1)
+							os.system('sudo shutdown now')
+							#sys.exit(1)
 					else :
 						if fail_count < SHUTDOWN_DELAY_TIMES :
 							send_message("输入电压恢复正常%s" % apcserial.Input_vol)
