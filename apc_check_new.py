@@ -2,11 +2,12 @@
 #coding=utf8
 
 import csv
-import time
-import subprocess
+from time import sleep, strftime, time
 import os
 import termios
 import threading
+import urllib.request
+import urllib.parse
 
 BAUDRATE = 2400
 SLEEP_SECONDS = 60	#seconds
@@ -71,26 +72,26 @@ class SerialPort:
 				print("Received:", data)
 
 	def read(self, size=100):
-		end_time = time.time() + self.timeout
-		while time.time() < end_time:
+		end_time = time() + self.timeout
+		while time() < end_time:
 			try:
 				data = os.read(self.fd, size)  # 从串口读取数据
 				if data:
 					return data.decode()
 			except BlockingIOError:
-				time.sleep(0.1)
+				sleep(0.1)
 		return ""
 
 	def readline(self):
-		end_time = time.time() + self.timeout
-		while time.time() < end_time:
+		end_time = time() + self.timeout
+		while time() < end_time:
 			data = self.read()
 			if data:
 				self.buffer += data
 				if '\n' in self.buffer:
 					line, self.buffer = self.buffer.split('\n', 1)
 					return line + '\n'
-			time.sleep(0.1)  # 避免忙等待
+			sleep(0.1)  # 避免忙等待
 		return ""
 
 	def start_reading(self):
@@ -129,7 +130,7 @@ class APCSerial:
 		self.serial = SerialPort(port, baudrate)
 		mode = self._read_ups('M\n')
 		# todo: test init in Smart mode (UPS returns 'V\n')
-		print( u"%s : PORT %s link APC mode %s" % (time.strftime("%Y%m%d-%H%M%S"), port, mode))
+		print( u"%s : PORT %s link APC mode %s" % (strftime("%Y%m%d-%H%M%S"), port, mode))
 
 	def _read_ups(self, command):
 		self.serial.write(command)
@@ -185,25 +186,32 @@ class APCSerial:
 		self.serial.close()
 
 def send_message(m):
-	command = ['wget','-O-', '"http://127.0.0.1:8001/?usr=abc&from=UPS&msg=(' + time.strftime("%Y%m%d-%H%M%S") + ')\n' + m + '"']
+	# 构建 URL
+	url = f'http://127.0.0.1:8001/?usr=abc&from=UPS&msg=({strftime("%Y%m%d-%H%M%S")})\n{m}'
+	encoded_url = urllib.parse.quote(url, safe='/:?=&')
 	if DEBUG :
-		print("Send message : %s" % " ".join(command))
-	subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-	#print(m)	#output for debug 
+		print("Send message : %s" % url)
+	try:
+		with urllib.request.urlopen(encoded_url) as response:
+			# 忽略响应内容
+			pass
+	except Exception as e:
+		# 打印错误消息（如果有）
+		print("%s 发送 %s 错误：%s" % (strftime("%Y%m%d-%H%M%S"), encoded_url, e))
 	
 def get_device_port():
-	try:
-		usb_port=subprocess.check_output('ls /dev/ttyUSB*',shell=True).decode().split('\n')
-	except:
-		usb_port=['']
-	return usb_port
+	# 列出 /dev 目录中的所有文件
+	all_files = os.listdir('/dev')
+	# 过滤出符合 ttyUSB* 模式的文件
+	usb_ports = [f'/dev/{file}' for file in all_files if file.startswith('ttyUSB')]
+	return usb_ports
 
 def main():
 	for PORT in get_device_port():
 	#	PORT = '/dev/ttyUSB0'
 		try:
 			apcserial = APCSerial(PORT, BAUDRATE)
-			time.sleep(1)
+			sleep(1)
 			fail_count = SHUTDOWN_DELAY_TIMES
 			notice_count = 0
 			while notice_count >= 0 :
@@ -234,11 +242,11 @@ def main():
 						print(msg)
 					send_message(msg)
 					notice_count = 0
-				time.sleep(SLEEP_SECONDS)
+				sleep(SLEEP_SECONDS)
 				notice_count += 1
 			apcserial.serial_close()
 		except Exception as e:
-			print("APC not found or communication error : %s" % e)
+			print("Port %s APC not found or communication error : %s" % (PORT, e))
 	
 if __name__ == '__main__':
 	main()
